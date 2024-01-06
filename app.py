@@ -17,7 +17,7 @@ app.config['MAIL_USE_SSL'] = False
 mail = Mail(app)
 
 
-# Configure this with your own API key
+
 openai.api_key = os.getenv('OPENAI_API_KEY')
 
 # Directory to save uploaded files
@@ -64,10 +64,10 @@ def upload_audio_file():
             response = chat_with_gpt4(transcript)
 
             # Send email with the GPT response
-            subject = f"Transcription and GPT Response for {filename}"
+            subject = f"Transcription for {filename}"
             msg = Message(subject=subject,
                           sender=app.config['MAIL_USERNAME'],
-                          recipients=['aszaiman1@gmail.com'],  # Replace with the recipient's email address
+                          recipients=[os.getenv('RECIPIENT_ADDRESS')],
                           body=response)
             mail.send(msg)
 
