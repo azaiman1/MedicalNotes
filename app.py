@@ -4,21 +4,37 @@ from werkzeug.utils import secure_filename
 from flask import Flask, render_template, request, redirect, url_for, flash
 from flask_mail import Mail, Message
 
+
+def get_env_variable(name: str):
+    """
+    :param name: str - Name of the environmental variable
+    :return: Environmental variable or raise error if the environmental variable is not set
+    """
+    value = os.getenv(name)
+    if not value:
+        raise EnvironmentError(f"Missing environment variable: {name}")
+    return value
+
+
+
+openai_client = openai.OpenAI(api_key=get_env_variable('OPENAI_API_KEY'))
+
 app = Flask(__name__)
-app.secret_key = os.getenv('FLASK_KEY')
+app.secret_key = get_env_variable('FLASK_KEY')
 
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 587
-app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
-app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
+app.config['MAIL_USERNAME'] = get_env_variable('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = get_env_variable('MAIL_PASSWORD')
 app.config['MAIL_USE_TLS'] = True
 app.config['MAIL_USE_SSL'] = False
+
 
 mail = Mail(app)
 
 
 
-openai.api_key = os.getenv('OPENAI_API_KEY')
+openai.api_key = get_env_variable('OPENAI_API_KEY')
 
 # Directory to save uploaded files
 UPLOAD_FOLDER = 'uploads'
@@ -31,16 +47,28 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
-def allowed_file(filename):
+def allowed_file(filename: str):
+    """
+    :param filename: str - Name of the filename to check
+    :return: bool - Boolean indicating if file extension is allowed
+    """
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @app.route('/')
 def upload_file():
+    """
+    :return: Rendered 'upload.html' template for the file upload page
+    """
     return render_template('upload.html')
 
 
 @app.route('/uploader', methods=['GET', 'POST'])
 def upload_audio_file():
+    """
+    Handle the file upload and processing. It uploads the file, processes it,
+    sends an email with the response, and provides user feedback.
+    :return: Redirects upload page or renders page success message
+    """
     if request.method == 'POST':
         # Check if the post request has the file part
         if 'file' not in request.files:
@@ -67,7 +95,7 @@ def upload_audio_file():
             subject = f"Transcription for {filename}"
             msg = Message(subject=subject,
                           sender=app.config['MAIL_USERNAME'],
-                          recipients=[os.getenv('RECIPIENT_ADDRESS')],
+                          recipients=[get_env_variable('RECIPIENT_ADDRESS')],
                           body=response)
             mail.send(msg)
 
@@ -77,14 +105,19 @@ def upload_audio_file():
 
     return render_template('upload.html')
 
-def transcribe_audio(file_path, model="whisper-1", response_format="text"):
+def transcribe_audio(file_path: str, model="whisper-1", response_format="text") -> str:
+    """
+    :param file_path: Filepath to audio file being transcribed
+    :param model: Model used
+    :param response_format: Format of the Response
+    :return: String of audio from given file
+    """
     # Initialize OpenAI client
-    client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
     # Open the audio file
     with open(file_path, "rb") as audio_file:
         # Create a transcription request
-        transcript = client.audio.transcriptions.create(
+        transcript = openai_client.audio.transcriptions.create(
             model=model,
             file=audio_file,
             response_format=response_format
@@ -92,8 +125,14 @@ def transcribe_audio(file_path, model="whisper-1", response_format="text"):
     return transcript
 
 
-def chat_with_gpt4(transcription, system_message="You are a helpful medical assistant notetaker.", examples=EXAMPLES, temperature=0.7):
-    client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+def chat_with_gpt4(transcription: str, system_message="You are a helpful medical assistant notetaker.", examples=EXAMPLES, temperature=0.7) -> str:
+    """
+    :param transcription: String of the audio file transcribed into text
+    :param system_message: The system message provided to the LLM
+    :param examples: Examples to feed LLM to better understand task
+    :param temperature: Temperature of the LLM
+    :return: GPT4 response given the parameters
+    """
     messages = []
     if system_message:
         messages.append({"role": "system", "content": system_message})
@@ -102,13 +141,14 @@ def chat_with_gpt4(transcription, system_message="You are a helpful medical assi
             messages.append({"role": "system", "content": example})
     messages.append({"role": "user", "content": transcription})
 
-    response = client.chat.completions.create(
+    response = openai_client.chat.completions.create(
         model="gpt-4",
         messages=messages,
         temperature=temperature,
         max_tokens=2500
     )
     return response.choices[0].message.content
+
 
 if __name__ == '__main__':
     app.run(debug=True)
